@@ -83,9 +83,9 @@ public class MessageServer implements Runnable {
     private void parseBufferForHeader(byte[] buff, Set<DataChunk> dataList, Map<String, Message> messageMap) {
 
         DataChunk dataChunkLocal = new DataChunk();
-        long seqNum;
-        int serializedMsgSize;
-        int type;
+        long seqNum=-1;
+        int serializedMsgSize=-1;
+        int type=-1;
 
         //int startHeaderOffset = sniffStartHeaderOffset(buff);
 
@@ -159,8 +159,10 @@ public class MessageServer implements Runnable {
                     alloc = dataChunk.getFullMessageSize() - dataChunk.getTotal();
                 }
 
+                logger.info(format("Allocated %s",alloc));
                 ByteBuffer
                         data = ByteBuffer.wrap(new byte[alloc]).put(buff, 0, alloc);
+
                 dataChunkLocal = dataChunk;
                 data = ByteBuffer.wrap(
                         new byte[dataChunk.getTotal() + alloc]).put(dataChunk.getRawData()).put(data.array()); //we write 5 bytes of header
@@ -198,6 +200,8 @@ public class MessageServer implements Runnable {
         if (dataChunkLocal != null && dataChunkLocal.getRawData() != null) {
             dataList.add(dataChunkLocal);
             logger.info("dataList size: "+dataList.size());
+            logger.info(" messageMap.size(): "+ messageMap.size());
+
             logger.info(dataChunkLocal.toString());
         }
 
