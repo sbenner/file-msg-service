@@ -13,6 +13,8 @@ import java.nio.channels.FileChannel;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Semaphore;
 
+import static java.lang.String.format;
+
 /**
  * Created with IntelliJ IDEA.
  * User: sbenner
@@ -62,7 +64,7 @@ public class FileMessageSender extends MessageSender implements Runnable {
             while ((read = inChannel.read(buf)) != -1) {
 
                 buf.flip();
-                logger.info("Thread + #" + threadId + " is reading " + read + " file " + md5);
+                logger.info("Thread + #" + threadId + " read  " + read + " file " + md5);
                 if (read > 0) {
                     byte[] b = new byte[read];
                     buf.get(b);
@@ -83,8 +85,9 @@ public class FileMessageSender extends MessageSender implements Runnable {
         m.setMesageId(id);
         m.setFileSize(fileSize);
         m.setMd5(md5);
-        byte[] msg = buildMessage(m, id);
 
+        byte[] msg = buildMessage(m, id);
+            logger.error(format("sent %s bytes",msg.length));
         outToServer.write(msg);
         outToServer.flush();
 

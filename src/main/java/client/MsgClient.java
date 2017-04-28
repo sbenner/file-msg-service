@@ -34,7 +34,7 @@ public class MsgClient {
         System.out.println(modifiedSentence);
 
         long i = 1;
-        File[] files = readDirectory("/Users/sergey/projects/msgserver");
+        File[] files = readDirectory("/Users/sergey/projects/msgservice/src/main/resources");
         CountDownLatch countDownLatch = new CountDownLatch(files.length);
         Semaphore semaphore = new Semaphore(files.length);
 
