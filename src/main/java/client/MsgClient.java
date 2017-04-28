@@ -14,12 +14,14 @@ public class MsgClient {
 
 
     private static File[] readDirectory(String path) {
-        return new File(path).listFiles(new FileFilter() {
-            
-            public boolean accept(File pathname) {
-                return pathname.getName().startsWith("log4j.");
-            }
-        });
+        return new File(path).listFiles(
+//                new FileFilter() {
+//
+//            public boolean accept(File pathname) {
+//                //return pathname.getName().startsWith("log4j.");
+//            }
+//        }
+        );
     }
 
     public static void main(String argv[]) throws Exception {

@@ -6,16 +6,16 @@ package commons.enums;
  * Date: 12/4/16
  * Time: 3:55 AM
  */
-public enum Command {
+public enum MessageType {
     FILE(1), TEXT(2), ACTION(3);
     private final int type;
 
-    Command(int type) {
+    MessageType(int type) {
         this.type = type;
     }
 
-    public static Command getValue(int value) {
-        for (Command e : Command.values()) {
+    public static MessageType getValue(int value) {
+        for (MessageType e : MessageType.values()) {
             if (e.type == value) {
                 return e;
             }

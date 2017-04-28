@@ -1,6 +1,6 @@
 package commons.types;
 
-import commons.enums.Command;
+import commons.enums.MessageType;
 
 /**
  * Created with IntelliJ IDEA.
@@ -13,7 +13,7 @@ public class DataChunk {
     private long seqNum=0;
     private int fullMessageSize=0;
     private int crc=0;
-    private Command command;
+    private MessageType messageType;
     private byte[]  rawData;
     public DataChunk(){
 
@@ -21,7 +21,7 @@ public class DataChunk {
 
     @Override
     public String toString() {
-        String sb = " Command: " + getCommand().name() +
+        String sb = " MessageType: " + getMessageType().name() +
                 " Message Size: " + getFullMessageSize() +
                 " crc: " + getCrc() +
                 " current data size: " + getTotal();
@@ -42,12 +42,12 @@ public class DataChunk {
           this.rawData=b;
     }
 
-    public Command getCommand() {
-        return command;
+    public MessageType getMessageType() {
+        return messageType;
     }
 
-    public void setCommand(Command command) {
-        this.command = command;
+    public void setMessageType(MessageType messageType) {
+        this.messageType = messageType;
     }
 
     public boolean isNew() {

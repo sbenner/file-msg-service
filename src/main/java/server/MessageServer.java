@@ -1,15 +1,15 @@
 package server;
 
-import commons.enums.Command;
+import commons.Utils;
+import commons.enums.MessageType;
+import commons.types.DataChunk;
 import commons.types.FileMessage;
 import commons.types.Message;
-import commons.types.DataChunk;
 import org.apache.commons.lang3.SerializationUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.ByteArrayInputStream;
-import java.io.File;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
@@ -17,10 +17,13 @@ import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.locks.ReadWriteLock;
+
+import static java.lang.String.format;
 
 public class MessageServer implements Runnable {
 
@@ -31,7 +34,7 @@ public class MessageServer implements Runnable {
     Map<String, Message> messageMap = new ConcurrentHashMap();
     private ServerSocketChannel serverSocketChannel;
     private Selector selector;
-    
+
 
     public MessageServer(int port) throws IOException {
         this.port = port;
@@ -42,10 +45,6 @@ public class MessageServer implements Runnable {
         this.serverSocketChannel.register(selector, SelectionKey.OP_ACCEPT);
     }
 
-    public static void main(String[] args) throws IOException {
-        MessageServer server = new MessageServer(10523);
-        (new Thread(server)).start();
-    }
 
     public void run() {
         try {
@@ -80,90 +79,79 @@ public class MessageServer implements Runnable {
         logger.info("accepted connection from: " + address);
     }
 
-    private int makeCRC(byte[] header){
-        int crc = 0;
-        for (int i = 0; i < 13; i++) {
-            crc += header[i] & 0xFF;
-        }
-        return crc;
-    }
-
-    private boolean checkCrc(byte[] header, int crc) {
-        int total = 0;
-        for (int i = 0; i < 13; i++) {
-            total += header[i] & 0xFF;
-        }
-        return crc == total;
-    }
 
     private void parseBufferForHeader(byte[] buff, Set<DataChunk> dataList, Map<String, Message> messageMap) {
 
         DataChunk dataChunkLocal = new DataChunk();
-        long seqNum = -1;
-        int serializedMsgSize = -1;
-        int type = -1;
+        long seqNum;
+        int serializedMsgSize;
+        int type;
 
         //int startHeaderOffset = sniffStartHeaderOffset(buff);
 
 
+//        if (buff.length <= 17 && dataList.size() > 0) {
+//
+//            dataChunkLocal = dataList.iterator().next();
+//
+//           logger.info("REST IS SMALLL");
+//                ByteBuffer
+//                        data = ByteBuffer.wrap(new byte[buff.length]).put(buff, 0, buff.length);
+//
+//                data = ByteBuffer.wrap(new byte[dataChunkLocal.getTotal() + buff.length])
+//                        .put(dataChunkLocal.getRawData()).put(data.array()); //we write 5 bytes of header
+//
+//                dataChunkLocal.setRawData(data.array());
+//
+//                dataChunkLocal.setSeqNum(seqNum);
+//
+//                if (dataChunkLocal.getMessageType().equals(MessageType.FILE) && dataChunkLocal.getTotal() == dataChunkLocal.getFullMessageSize()) { //we build message if it's full
+//                    concatMessage(messageMap, dataChunkLocal);
+//
+//                }
+//
+//            printMessages();
+//            return;
+//
+//        }
+
+        byte[] header = new byte[17];
+        new ByteArrayInputStream(buff).read(header, 0, 17);
+        seqNum = ByteBuffer.wrap(header, 0, 8).getLong();
+        serializedMsgSize = ByteBuffer.wrap(header, 8, 4).getInt();
+        type = ByteBuffer.wrap(header, 12, 1).get() & 0xff;
+        int crc = ByteBuffer.wrap(header, 13, 4).getInt();
 
 
-        if (buff.length <= 17 && dataList.size() > 0) {
+        if (Utils.checkCrc(header, crc)) { //see if header is ok with crc
 
-            dataChunkLocal = dataList.iterator().next();
-            if (buff.length == (dataChunkLocal.getFullMessageSize() - dataChunkLocal.getTotal())) {
-
-                ByteBuffer
-                        data = ByteBuffer.wrap(new byte[buff.length]).put(buff, 0, buff.length);
-
-                data = ByteBuffer.wrap(new byte[dataChunkLocal.getTotal() + buff.length])
-                        .put(dataChunkLocal.getRawData()).put(data.array()); //we write 5 bytes of header
-
-                dataChunkLocal.setRawData(data.array());
-
-                dataChunkLocal.setSeqNum(seqNum);
-
-                if (dataChunkLocal.getCommand().equals(Command.FILE) && dataChunkLocal.getTotal() == dataChunkLocal.getFullMessageSize()) { //we build message if it's full
-                    concatMessage(messageMap, dataChunkLocal);
-
-                }
-            }
-            logger.info("message map size: " + messageMap.size());
-            return;
-        }
-
-        byte[] header =  new byte[17];
-        new ByteArrayInputStream(buff).read(header,0,17);
-        seqNum = ByteBuffer.wrap(header,0,8).getLong();
-        serializedMsgSize = ByteBuffer.wrap(header,8,4).getInt();
-        type = ByteBuffer.wrap(header, 12, 1).get()&0xff;
-        int crc = ByteBuffer.wrap(header,13,4).getInt();
-
-
-        if (checkCrc(header, crc)) { //see if header is ok with crc
-
-            Command c = Command.getValue(type);
+            logger.info("seq num "+seqNum);
+            MessageType c = MessageType.getValue(type);
 
             byte[] msgData = ByteBuffer.wrap(new byte[buff.length - 17]).put(buff, 17, buff.length - 17).array();
-            dataChunkLocal.setCommand(c);
+            dataChunkLocal.setMessageType(c);
             dataChunkLocal.setFullMessageSize(serializedMsgSize);
             dataChunkLocal.setRawData(msgData);
             dataChunkLocal.setCrc(crc);
             dataChunkLocal.setSeqNum(seqNum);
 
-            if (dataChunkLocal.getCommand().equals(Command.FILE) && dataChunkLocal.getTotal() == dataChunkLocal.getFullMessageSize()) { //we build message if it's full
+            if (dataChunkLocal.getMessageType().equals(MessageType.FILE)
+                    && dataChunkLocal.getTotal() == dataChunkLocal.getFullMessageSize()) { //we build message if it's full
                 concatMessage(messageMap, dataChunkLocal);
             }
 
         } else {
-
+//
             DataChunk dataChunk = null;
             if (dataList.size() > 0) {
                 dataChunk = dataList.iterator().next();
-                dataList.clear();
+
             }
             //we attaching the rest of the buffers if needed and transform into correct messages
             if (dataChunk != null && dataChunk.getTotal() < dataChunk.getFullMessageSize()) {
+
+                logger.info(format("dataChunk.total %s msg size: %s ",dataChunk.getTotal(),dataChunk.getFullMessageSize()));
+
                 int alloc = 0;
                 if ((dataChunk.getFullMessageSize() - dataChunk.getTotal()) > buff.length) {
                     alloc = buff.length;
@@ -174,12 +162,14 @@ public class MessageServer implements Runnable {
                 ByteBuffer
                         data = ByteBuffer.wrap(new byte[alloc]).put(buff, 0, alloc);
                 dataChunkLocal = dataChunk;
-                data = ByteBuffer.wrap(new byte[dataChunk.getTotal() + alloc]).put(dataChunk.getRawData()).put(data.array()); //we write 5 bytes of header
+                data = ByteBuffer.wrap(
+                        new byte[dataChunk.getTotal() + alloc]).put(dataChunk.getRawData()).put(data.array()); //we write 5 bytes of header
 
                 dataChunkLocal.setRawData(data.array());
 
                 try {
-                    if (dataChunk.getCommand().equals(Command.FILE) && dataChunkLocal.getTotal() == dataChunkLocal.getFullMessageSize()) { //we build message if it's full
+                    if (dataChunk.getMessageType().equals(MessageType.FILE)
+                            && dataChunkLocal.getTotal() == dataChunkLocal.getFullMessageSize()) { //we build message if it's full
                         concatMessage(messageMap, dataChunkLocal);
                         dataList.clear();
                         dataChunkLocal = null;
@@ -195,34 +185,53 @@ public class MessageServer implements Runnable {
                         }
                     }
 
-                    List<Message> messages = new ArrayList<Message>(messageMap.values());
 
-                    for(Message m : messages){
-                        if(Command.getValue(m.getType()).equals(Command.FILE)) {
-                            FileMessage fileMessage  = (FileMessage) m;
-                            if (fileMessage.getMessageSize() == fileMessage.getFileSize()) {
-                                logger.info(new String(fileMessage.getPayload()));
-                            }
-                        }
-
-                    }
                 } catch (Exception e) {
-                    logger.error(e.getMessage(),e);
+                    logger.error(e.getMessage(), e);
                 }
             }
+
+
+
         }
 
         if (dataChunkLocal != null && dataChunkLocal.getRawData() != null) {
             dataList.add(dataChunkLocal);
+            logger.info("dataList size: "+dataList.size());
             logger.info(dataChunkLocal.toString());
         }
 
+        printMessages();
 
+    }
+
+    private void printMessages(){
+
+        Iterator iterator = messageMap.entrySet().iterator();
+        while (iterator.hasNext()) {
+            Map.Entry<String,Message> sm = (Map.Entry<String,Message> )iterator.next();
+            Message m = sm.getValue();
+
+            if (MessageType.getValue(m.getType()).equals(MessageType.FILE)) {
+                FileMessage fileMessage = (FileMessage) m;
+                if (fileMessage.getMessageSize() == fileMessage.getFileSize()) {
+                    try {
+                        Files.write(Paths.get(fileMessage.getFileName()),fileMessage.getPayload(), StandardOpenOption.CREATE);
+                        iterator.remove();
+                    } catch (IOException e) {
+                       logger.error(e.getMessage(),e);
+                    }
+                    if(fileMessage.getFileType().contains("text"))
+                    logger.info(new String(fileMessage.getPayload()));
+                }
+            }
+
+        }
     }
 
     private void concatMessage(Map<String, Message> messageMap, DataChunk dataChunkLocal) {
 
-        if(dataChunkLocal.getCommand().equals(Command.FILE)) {
+        if (dataChunkLocal.getMessageType().equals(MessageType.FILE)) {
             FileMessage m = (FileMessage) buildMessage(dataChunkLocal.getRawData());
             if (m != null) {
                 FileMessage existingMessagePart = (FileMessage) messageMap.get(m.getMd5());
@@ -265,7 +274,7 @@ public class MessageServer implements Runnable {
     private Message buildMessage(byte[] data) {
         Message msg = null;
         try {
-                msg = SerializationUtils.deserialize(data);
+            msg = SerializationUtils.deserialize(data);
         } catch (Exception e) {
             logger.error(e.getMessage(), e);
         }

@@ -1,6 +1,7 @@
 package client;
 
 import commons.types.FileMessage;
+import org.apache.tika.Tika;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -10,6 +11,8 @@ import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
+import java.nio.file.Files;
+import java.nio.file.spi.FileTypeDetector;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Semaphore;
 
@@ -23,13 +26,14 @@ import static java.lang.String.format;
  */
 public class FileMessageSender extends MessageSender implements Runnable {
 
-    private static final Logger logger = LoggerFactory.getLogger(MsgClient.class);
+    private static final Logger logger = LoggerFactory.getLogger(FileMessageSender.class);
     private static DataOutputStream out;
     private File file;
     private Semaphore semaphore;
     private long id;
     private CountDownLatch countDownLatch;
     private String md5;
+    private String fileType;
 
 
     public FileMessageSender(DataOutputStream out, File file, String md5, Semaphore semaphore, long id, CountDownLatch countDownLatch) {
@@ -51,24 +55,25 @@ public class FileMessageSender extends MessageSender implements Runnable {
 
     public void readFileAndSendMessage(DataOutputStream out, File file, long id, String md5) {
         try {
+            setFileType(new Tika().detect(file));
 
             logger.info("sending file " + file.getName());
+            logger.info("sending contentType " + getFileType());
             RandomAccessFile aFile = new RandomAccessFile(
                     file, "r");
             FileChannel inChannel = aFile.getChannel();
             ByteBuffer buf = ByteBuffer.allocate(1024);
             long threadId = Thread.currentThread().getId();
 
-            int read = 0;
+            int read;
 
             while ((read = inChannel.read(buf)) != -1) {
 
                 buf.flip();
-                logger.info("Thread + #" + threadId + " read  " + read + " file " + md5);
                 if (read > 0) {
                     byte[] b = new byte[read];
                     buf.get(b);
-                    sendFileMessage(out, b, id, md5, file.length());
+                    sendFileMessage(out, createMessage(b));
                 }
             }
 
@@ -78,16 +83,24 @@ public class FileMessageSender extends MessageSender implements Runnable {
 
     }
 
-    private void sendFileMessage(DataOutputStream outToServer, byte[] fileContents, long id, String md5, long fileSize) throws IOException {
+    private FileMessage createMessage(byte[] fileContents){
+        FileMessage fileMessage = new FileMessage();
+        fileMessage.setPayload(ByteBuffer.allocate(fileContents.length).put(fileContents).array());
+        fileMessage.setMesageId(getId());
+        fileMessage.setFileSize(getFile().length());
+        fileMessage.setFileType(getFileType());
+        fileMessage.setFileName(getFile().getName());
+        fileMessage.setMd5(getMd5());
+        return  fileMessage;
 
-        FileMessage m = new FileMessage();
-        m.setPayload(ByteBuffer.allocate(fileContents.length).put(fileContents).array());
-        m.setMesageId(id);
-        m.setFileSize(fileSize);
-        m.setMd5(md5);
+    }
 
-        byte[] msg = buildMessage(m, id);
-            logger.error(format("sent %s bytes",msg.length));
+    private void sendFileMessage(DataOutputStream outToServer,
+                              FileMessage fileMessage) throws IOException {
+
+
+        byte[] msg = buildMessage(fileMessage, id);
+            logger.error(format("sent %s bytes msg #id %s",msg.length,id));
         outToServer.write(msg);
         outToServer.flush();
 
@@ -137,5 +150,13 @@ public class FileMessageSender extends MessageSender implements Runnable {
         readFileAndSendMessage(getOut(), getFile(), getId(), getMd5());
         getSemaphore().release();
         getCountDownLatch().countDown();
+    }
+
+    public String getFileType() {
+        return fileType;
+    }
+
+    public void setFileType(String fileType) {
+        this.fileType = fileType;
     }
 }

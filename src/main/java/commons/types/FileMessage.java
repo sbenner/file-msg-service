@@ -7,8 +7,11 @@ public class FileMessage extends Message {
 
     private String fileName;
 
+    private String fileType;
+
     private String md5;
     private long fileSize;
+
 
     private int messageSize;
 
@@ -46,5 +49,13 @@ public class FileMessage extends Message {
 
     public void setMessageSize(int len) {
         this.messageSize = len;
+    }
+
+    public String getFileType() {
+        return fileType;
+    }
+
+    public void setFileType(String fileType) {
+        this.fileType = fileType;
     }
 }
