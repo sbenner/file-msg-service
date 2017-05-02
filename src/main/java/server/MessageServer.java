@@ -19,7 +19,6 @@ import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
 import java.nio.file.Files;
 import java.nio.file.Paths;
-import java.nio.file.StandardOpenOption;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Map;
@@ -27,14 +26,17 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static java.lang.String.format;
+import static java.nio.file.StandardOpenOption.CREATE;
+import static java.nio.file.StandardOpenOption.SYNC;
 
 public class MessageServer implements Runnable {
 
     private static final Logger logger = LoggerFactory.getLogger(MessageServer.class);
+    private volatile byte[] headerChunk = null;
     private final int port;
     private final ByteBuffer welcomeBuf = ByteBuffer.wrap("Welcome to NioChat!\n".getBytes());
-    Set<DataChunk> dataList = new HashSet<DataChunk>();
-    Map<String, Message> messageMap = new ConcurrentHashMap();
+    private Set<DataChunk> dataList = new HashSet<DataChunk>();
+    private Map<String, Message> messageMap = new ConcurrentHashMap();
     private ServerSocketChannel serverSocketChannel;
     private Selector selector;
 
@@ -47,7 +49,6 @@ public class MessageServer implements Runnable {
         this.selector = Selector.open();
         this.serverSocketChannel.register(selector, SelectionKey.OP_ACCEPT);
     }
-
 
     public void run() {
         try {
@@ -82,9 +83,6 @@ public class MessageServer implements Runnable {
         logger.info("accepted connection from: " + address);
     }
 
-
-    private static volatile byte[] headerChunk=null;
-
     private void parseBufferForHeader(byte[] buff, Set<DataChunk> dataList, Map<String, Message> messageMap) {
 
         DataChunk dataChunkLocal = new DataChunk();
@@ -92,10 +90,7 @@ public class MessageServer implements Runnable {
         int serializedMsgSize = -1;
         int type = -1;
 
-
-        //int startHeaderOffset = sniffStartHeaderOffset(buff);
-
-        logger.info(format("\nBUFF.length %s !!!! \n dataList.size() %s ", buff.length,dataList.size()));
+        logger.info(format("\nBUFF.length %s !!!! \n dataList.size() %s ", buff.length, dataList.size()));
 
         if (buff.length <= 17 && dataList.size() > 0) {
 
@@ -114,19 +109,14 @@ public class MessageServer implements Runnable {
 
             if (dataChunkLocal.getMessageType().equals(MessageType.FILE) && dataChunkLocal.getTotal() == dataChunkLocal.getFullMessageSize()) { //we build message if it's full
                 concatMessage(messageMap, dataChunkLocal);
-
             }
 
-            printMessages();
+
             return;
 
         }
 
-//if we read only a part of a header
-// we should proceed with the rest of the header part
-
-
-        if(buff.length<17&&dataList.size()==0){
+        if (buff.length < 17 && dataList.size() == 0) {
             headerChunk = buff;
             //we should assemble header to full 17 bytes
             return;
@@ -135,16 +125,16 @@ public class MessageServer implements Runnable {
 
         byte[] header = new byte[17];
 
-        if(headerChunk!=null&&headerChunk.length>0){
+        if (headerChunk != null && headerChunk.length > 0) {
             ByteBuffer bb =
-                    ByteBuffer.allocate(headerChunk.length+buff.length).
+                    ByteBuffer.allocate(headerChunk.length + buff.length).
                             put(headerChunk).put(buff);
 
             new ByteArrayInputStream(bb.array()).read(header, 0, 17);
-            buff=bb.array();
-            headerChunk=null;
+            buff = bb.array();
+            headerChunk = null;
 
-        }else{
+        } else {
             new ByteArrayInputStream(buff).read(header, 0, 17);
         }
 
@@ -175,7 +165,6 @@ public class MessageServer implements Runnable {
             }
 
         } else {
-//
             DataChunk dataChunk = null;
             if (dataList.size() > 0) {
                 dataChunk = dataList.iterator().next();
@@ -228,13 +217,10 @@ public class MessageServer implements Runnable {
                         }
                     }
 
-
                 } catch (Exception e) {
                     logger.error(e.getMessage(), e);
                 }
             }
-
-
         }
 
         if (dataChunkLocal != null && dataChunkLocal.getRawData() != null) {
@@ -243,7 +229,6 @@ public class MessageServer implements Runnable {
             logger.info(dataChunkLocal.toString());
         }
 
-        printMessages();
 
     }
 
@@ -258,8 +243,9 @@ public class MessageServer implements Runnable {
                 FileMessage fileMessage = (FileMessage) m;
                 if (fileMessage.getMessageSize() == fileMessage.getFileSize()) {
                     try {
-                        Files.write(Paths.get(fileMessage.getFileName()), fileMessage.getPayload(), StandardOpenOption.CREATE);
+                        Files.write(Paths.get(fileMessage.getFileName()), fileMessage.getPayload(), CREATE, SYNC);
                         iterator.remove();
+                        logger.info("File written: " + fileMessage.getFileName());
                     } catch (IOException e) {
                         logger.error(e.getMessage(), e);
                     }
@@ -291,7 +277,9 @@ public class MessageServer implements Runnable {
 
                 messageMap.put(m.getMd5(), m);
             }
+            printMessages();
         }
+
 
     }
 
