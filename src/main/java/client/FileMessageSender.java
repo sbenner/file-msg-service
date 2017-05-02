@@ -100,7 +100,7 @@ public class FileMessageSender extends MessageSender implements Runnable {
 
 
         byte[] msg = buildMessage(fileMessage, id);
-            logger.error(format("sent %s bytes msg #id %s",msg.length,id));
+        logger.info(format("sent %s bytes msg #id %s",msg.length,id));
         outToServer.write(msg);
         outToServer.flush();
 
