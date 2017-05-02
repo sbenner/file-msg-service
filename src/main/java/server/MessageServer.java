@@ -32,9 +32,9 @@ import static java.nio.file.StandardOpenOption.SYNC;
 public class MessageServer implements Runnable {
 
     private static final Logger logger = LoggerFactory.getLogger(MessageServer.class);
-    private volatile byte[] headerChunk = null;
     private final int port;
-    private final ByteBuffer welcomeBuf = ByteBuffer.wrap("Welcome to NioChat!\n".getBytes());
+    private final ByteBuffer welcomeBuf = ByteBuffer.wrap("Welcome to MsgServer!\n".getBytes());
+    private volatile byte[] headerChunk = null;
     private Set<DataChunk> dataList = new HashSet<DataChunk>();
     private Map<String, Message> messageMap = new ConcurrentHashMap();
     private ServerSocketChannel serverSocketChannel;
@@ -68,14 +68,14 @@ public class MessageServer implements Runnable {
                 }
             }
         } catch (IOException e) {
-            logger.info("IOException, server of port " + this.port + " terminating. Stack trace:");
-            e.printStackTrace();
+            logger.error(e.getMessage(), e);
         }
     }
 
     private void handleAccept(SelectionKey key) throws IOException {
         SocketChannel sc = ((ServerSocketChannel) key.channel()).accept();
-        String address = (new StringBuilder(sc.socket().getInetAddress().toString())).append(":").append(sc.socket().getPort()).toString();
+        String address = (new StringBuilder(sc.socket().getInetAddress().toString()))
+                            .append(":").append(sc.socket().getPort()).toString();
         sc.configureBlocking(false);
         sc.register(selector, SelectionKey.OP_READ, address);
         sc.write(welcomeBuf);
@@ -93,27 +93,13 @@ public class MessageServer implements Runnable {
         logger.info(format("\nBUFF.length %s !!!! \n dataList.size() %s ", buff.length, dataList.size()));
 
         if (buff.length <= 17 && dataList.size() > 0) {
-
             dataChunkLocal = dataList.iterator().next();
-
-            logger.info("REST IS SMALLL");
-            ByteBuffer
-                    data = ByteBuffer.wrap(new byte[buff.length]).put(buff, 0, buff.length);
-
-            data = ByteBuffer.wrap(new byte[dataChunkLocal.getTotal() + buff.length])
-                    .put(dataChunkLocal.getRawData()).put(data.array()); //we write 5 bytes of header
-
-            dataChunkLocal.setRawData(data.array());
-
-            dataChunkLocal.setSeqNum(seqNum);
+            appendToDataChunk(buff.length, buff, dataChunkLocal);
 
             if (dataChunkLocal.getMessageType().equals(MessageType.FILE) && dataChunkLocal.getTotal() == dataChunkLocal.getFullMessageSize()) { //we build message if it's full
                 concatMessage(messageMap, dataChunkLocal);
             }
-
-
             return;
-
         }
 
         if (buff.length < 17 && dataList.size() == 0) {
@@ -121,7 +107,6 @@ public class MessageServer implements Runnable {
             //we should assemble header to full 17 bytes
             return;
         }
-
 
         byte[] header = new byte[17];
 
@@ -138,12 +123,10 @@ public class MessageServer implements Runnable {
             new ByteArrayInputStream(buff).read(header, 0, 17);
         }
 
-
         seqNum = ByteBuffer.wrap(header, 0, 8).getLong();
         serializedMsgSize = ByteBuffer.wrap(header, 8, 4).getInt();
         type = ByteBuffer.wrap(header, 12, 1).get() & 0xff;
         int crc = ByteBuffer.wrap(header, 13, 4).getInt();
-
 
         logger.info(format("\nseq num read %s\n serializedMsgSize: %s\n type: %s\n crc: %s\n", seqNum, serializedMsgSize, type, crc));
 
@@ -168,7 +151,6 @@ public class MessageServer implements Runnable {
             DataChunk dataChunk = null;
             if (dataList.size() > 0) {
                 dataChunk = dataList.iterator().next();
-
             }
             //we attaching the rest of the buffers if needed and transform into correct messages
             logger.info("dataChunk: " + dataChunk);
@@ -185,18 +167,14 @@ public class MessageServer implements Runnable {
                 }
 
                 logger.info(format("Allocated %s", alloc));
-                ByteBuffer
-                        data = ByteBuffer.wrap(new byte[alloc]).put(buff, 0, alloc);
 
                 dataChunkLocal = dataChunk;
-                data = ByteBuffer.wrap(
-                        new byte[dataChunk.getTotal() + alloc]).put(dataChunk.getRawData()).put(data.array()); //we write 5 bytes of header
 
-                dataChunkLocal.setRawData(data.array());
+                appendToDataChunk(alloc, buff, dataChunk);
 
 
                 try {
-                    if (dataChunk.getMessageType().equals(MessageType.FILE)
+                    if (dataChunkLocal.getMessageType().equals(MessageType.FILE)
                             && dataChunkLocal.getTotal() == dataChunkLocal.getFullMessageSize()) { //we build message if it's full
                         concatMessage(messageMap, dataChunkLocal);
                         dataList.clear();
@@ -232,6 +210,16 @@ public class MessageServer implements Runnable {
 
     }
 
+    private void appendToDataChunk(int alloc, byte[] buff, DataChunk dataChunk) {
+        ByteBuffer
+                data = ByteBuffer.wrap(new byte[alloc]).put(buff, 0, alloc);
+        data = ByteBuffer.wrap(
+                new byte[dataChunk.getTotal() + alloc]).put(dataChunk.getRawData()).put(data.array()); //we write 5 bytes of header
+
+        dataChunk.setRawData(data.array());
+    }
+
+
     private void printMessages() {
 
         Iterator iterator = messageMap.entrySet().iterator();
@@ -265,7 +253,7 @@ public class MessageServer implements Runnable {
             if (m != null) {
                 logger.info("concat Message file size " + m.getMessageSize());
                 FileMessage existingMessagePart = (FileMessage) messageMap.get(m.getMd5());
-                logger.info("existingMessagePart " + existingMessagePart);
+
                 if (existingMessagePart != null) {
                     byte[] mdata = ByteBuffer.
                             wrap(new byte[m.getMessageSize() + existingMessagePart.getMessageSize()])
